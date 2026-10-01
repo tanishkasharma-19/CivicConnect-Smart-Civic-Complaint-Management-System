@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 @Table(
         name = "upvotes",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"complaint_id", "user_id"})
+                @UniqueConstraint(columnNames = {"user_id", "complaint_id"})
         }
 )
 @Getter
@@ -24,15 +24,15 @@ public class Upvote {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "complaint_id", nullable = false)
-    private Complaint complaint;
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id")
     private User user;
 
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "complaint_id")
+    private Complaint complaint;
 }

@@ -47,6 +47,16 @@ public class JwtFilter extends OncePerRequestFilter {
             UserDetails userDetails =
                     userDetailsService.loadUserByUsername(email);
 
+            // Deactivated account: block even if the token is still valid
+            if (!userDetails.isEnabled()) {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+                response.getWriter().write(
+                        "{\"message\":\"Your account has been deactivated. Please contact the administrator.\"}"
+                );
+                return;
+            }
+
             if (jwtUtil.isTokenValid(jwt, userDetails.getUsername())) {
 
                 UsernamePasswordAuthenticationToken authToken =

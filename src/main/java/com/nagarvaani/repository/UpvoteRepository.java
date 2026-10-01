@@ -9,8 +9,11 @@ import java.util.Optional;
 
 public interface UpvoteRepository extends JpaRepository<Upvote, Long> {
 
-    Optional<Upvote> findByComplaintAndUser(Complaint complaint, User user);
+    boolean existsByUserAndComplaint(User user, Complaint complaint);
 
     long countByComplaint(Complaint complaint);
 
+    Optional<Upvote> findByUserAndComplaint(
+            User user,
+            Complaint complaint);
 }

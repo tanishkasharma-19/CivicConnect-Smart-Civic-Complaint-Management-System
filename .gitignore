@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# --- add these lines to the END of your backend .gitignore ---
+application-local.properties
+.env
+*.pem
