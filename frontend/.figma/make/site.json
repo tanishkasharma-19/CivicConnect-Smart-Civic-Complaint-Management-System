@@ -1,0 +1,10 @@
+{
+  "description": "Empowering citizens to report civic issues, track complaints, and engage with local governance while enabling officers and admins to manage resolutions effectively.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
