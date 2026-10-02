@@ -457,7 +457,7 @@ export default function OfficerProfile({
         </h2>
 
         <p className="text-xs text-navy-500 mt-1.5 leading-5">
-          Your Officer account is authenticated using CivicConnect's JWT-based login system. Keep your login credentials private and do not share your account with others.
+          For your account security, please do not share your login credentials with anyone. If you suspect any unauthorized access to your account, please contact the support team immediately.
         </p>
 
       </div>
