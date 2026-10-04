@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { Page } from "../../types"
 import Logo from "../../components/Logo"
 import {
@@ -25,6 +25,8 @@ export default function LoginPage({
   const [showPwd, setShowPwd] = useState(false)
   const [remember, setRemember] = useState(false)
   const [loading, setLoading] = useState(false)
+  // Shown when sign-in takes long (free server is waking up)
+  const [slowHint, setSlowHint] = useState(false)
   const [error, setError] = useState(() => {
     // Message left by the axios interceptor (for example: account deactivated)
     const notice = sessionStorage.getItem("civicconnect.loginNotice")
@@ -35,6 +37,28 @@ export default function LoginPage({
 
     return notice ?? ""
   })
+
+  // Wake the backend while the visitor is still typing their details.
+  // (Free hosting puts the server to sleep when nobody uses it.)
+  useEffect(() => {
+    fetch(import.meta.env.VITE_API_BASE_URL || "http://localhost:8080", {
+      mode: "no-cors",
+    }).catch(() => {
+      // Ignore: this is only a wake-up call
+    })
+  }, [])
+
+  // After 8 seconds of waiting, explain why it is slow
+  useEffect(() => {
+    if (!loading) {
+      setSlowHint(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => setSlowHint(true), 8000)
+
+    return () => window.clearTimeout(timer)
+  }, [loading])
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -434,20 +458,20 @@ export default function LoginPage({
             </h2>
 
             <p className="text-white/70 text-sm leading-relaxed">
-              Join thousands of citizens reporting
-              and resolving civic issues in their
-              communities.
+              Report civic issues in your area, track
+              their progress, and see them resolved by
+              your city's officials.
             </p>
 
             <div className="grid grid-cols-3 gap-3 sm:gap-6 mt-6">
               {[
-                ["457", "Complaints Filed"],
-                ["312", "Issues Resolved"],
-                ["1.2K", "Citizens Active"],
+                ["Report", "Photo and location"],
+                ["Track", "Live status updates"],
+                ["Resolve", "Closed by officials"],
               ].map(([num, label]) => (
                 <div key={label}>
                   <div
-                    className="text-2xl font-bold text-white"
+                    className="text-xl font-bold text-white"
                     style={{
                       fontFamily:
                         "'Outfit', sans-serif",
@@ -483,7 +507,7 @@ export default function LoginPage({
           </h1>
 
           <p className="text-navy-500 text-sm mb-8">
-            Sign in to your NagarVaani account
+            Sign in to your CivicConnect account
           </p>
 
           {error && (
@@ -592,6 +616,13 @@ export default function LoginPage({
                 ? "Signing in..."
                 : "Sign in"}
             </button>
+
+            {slowHint && (
+              <p className="text-xs text-navy-500 text-center leading-relaxed">
+                The server is waking up. The first sign-in can take up
+                to 2 minutes. Please keep this page open.
+              </p>
+            )}
           </div>
 
           <p className="text-center text-sm text-navy-500 mt-6">
