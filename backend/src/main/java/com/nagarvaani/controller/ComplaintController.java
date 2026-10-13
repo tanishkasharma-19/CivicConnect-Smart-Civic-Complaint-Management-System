@@ -75,10 +75,13 @@ public class ComplaintController {
     }
     @GetMapping("/{id}")
     public ResponseEntity<ComplaintResponse> getComplaintById(
-            @PathVariable Long id) {
+            @PathVariable Long id,
+            Authentication authentication) {
 
         return ResponseEntity.ok(
-                complaintService.getComplaintById(id));
+                complaintService.getComplaintById(
+                        id,
+                        authentication.getName()));
     }
     @GetMapping("/my")
     public ResponseEntity<List<ComplaintResponse>> getMyComplaints(

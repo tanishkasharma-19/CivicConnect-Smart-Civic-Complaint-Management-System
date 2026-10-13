@@ -9,6 +9,10 @@ public class CreateOfficerRequest {
 
     private String email;
 
+    // Official contact number (10 digits). Shown to the citizen whose complaint
+    // is assigned to this officer.
+    private String phone;
+
     private String password;
 
     private Long departmentId;

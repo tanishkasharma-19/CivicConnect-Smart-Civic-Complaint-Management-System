@@ -1,5 +1,6 @@
 package com.nagarvaani.service;
 
+import com.nagarvaani.dto.request.CreateOfficerRequest;
 import com.nagarvaani.dto.request.ForgotPasswordRequest;
 import com.nagarvaani.dto.request.LoginRequest;
 import com.nagarvaani.dto.request.RegisterRequest;
@@ -7,6 +8,7 @@ import com.nagarvaani.dto.request.ResetPasswordRequest;
 import com.nagarvaani.dto.request.VerifyEmailRequest;
 import com.nagarvaani.dto.response.AuthResponse;
 import com.nagarvaani.enums.Role;
+import com.nagarvaani.model.Department;
 import com.nagarvaani.model.PasswordResetToken;
 import com.nagarvaani.model.User;
 import com.nagarvaani.repository.DepartmentRepository;
@@ -339,5 +341,48 @@ class AuthServiceTest {
                 assertThrows(RuntimeException.class, () -> authService.login(request));
 
         assertTrue(error.getMessage().contains("deactivated"));
+    }
+
+    // ---------- create officer ----------
+
+    private CreateOfficerRequest officerRequest(String phone) {
+        CreateOfficerRequest request = new CreateOfficerRequest();
+        request.setName("Officer One");
+        request.setEmail("officer@example.com");
+        request.setPassword("Password@123");
+        request.setDepartmentId(1L);
+        request.setPhone(phone);
+        return request;
+    }
+
+    @Test
+    void createOfficer_withInvalidPhone_isRejected() {
+        when(userRepository.findByEmail("officer@example.com"))
+                .thenReturn(Optional.empty());
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> authService.createOfficer(officerRequest("12345")));
+
+        assertTrue(error.getMessage().contains("phone"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void createOfficer_withValidPhone_savesOfficerWithPhone() {
+        Department department = Department.builder().name("Road Department").build();
+
+        when(userRepository.findByEmail("officer@example.com"))
+                .thenReturn(Optional.empty());
+        when(departmentRepository.findById(1L)).thenReturn(Optional.of(department));
+        when(passwordEncoder.encode("Password@123")).thenReturn("encoded-password");
+
+        authService.createOfficer(officerRequest("9876543210"));
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(saved.capture());
+
+        assertEquals("9876543210", saved.getValue().getPhone());
+        assertEquals(Role.OFFICER, saved.getValue().getRole());
+        assertTrue(saved.getValue().getEmailVerified());
     }
 }

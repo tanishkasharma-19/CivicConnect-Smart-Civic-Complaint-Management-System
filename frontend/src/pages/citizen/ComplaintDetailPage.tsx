@@ -632,6 +632,95 @@ export default function ComplaintDetailPage({
             </div>
           </div>
 
+          {/* Assigned Officer */}
+          <div className="bg-white rounded-2xl border border-navy-200/60 overflow-hidden shadow-sm">
+
+            <div className="p-5">
+
+              <h2
+                className="text-base font-bold text-navy-900"
+                style={{
+                  fontFamily:
+                    "'Outfit', sans-serif",
+                }}
+              >
+                Assigned Officer
+              </h2>
+
+              {complaint.officerName ? (
+                <div className="mt-3 space-y-2 text-sm">
+
+                  <div className="flex justify-between gap-4">
+                    <span className="text-navy-500">
+                      Name
+                    </span>
+
+                    <span className="font-medium text-navy-800 text-right">
+                      {complaint.officerName}
+                    </span>
+                  </div>
+
+                  {complaint.department && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-navy-500">
+                        Department
+                      </span>
+
+                      <span className="text-navy-700 text-right">
+                        {complaint.department}
+                      </span>
+                    </div>
+                  )}
+
+                  {complaint.officerEmail && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-navy-500">
+                        Email
+                      </span>
+
+                      <a
+                        href={`mailto:${complaint.officerEmail}`}
+                        className="text-brand-600 hover:text-brand-700 text-right break-all"
+                      >
+                        {complaint.officerEmail}
+                      </a>
+                    </div>
+                  )}
+
+                  {complaint.officerPhone && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-navy-500">
+                        Phone
+                      </span>
+
+                      <a
+                        href={`tel:${complaint.officerPhone}`}
+                        className="text-brand-600 hover:text-brand-700 text-right"
+                      >
+                        {complaint.officerPhone}
+                      </a>
+                    </div>
+                  )}
+
+                  {!complaint.officerEmail &&
+                    !complaint.officerPhone && (
+                      <p className="text-xs text-navy-400 pt-1">
+                        Contact details are shown only to the
+                        citizen who filed this complaint.
+                      </p>
+                    )}
+
+                </div>
+              ) : (
+                <p className="text-xs text-navy-500 mt-2">
+                  No officer has been assigned yet. An officer is
+                  assigned after the complaint is verified.
+                </p>
+              )}
+
+            </div>
+          </div>
+
           {/* Resolution Details */}
           {(complaint.status === "RESOLVED" ||
             complaint.status === "CLOSED") &&

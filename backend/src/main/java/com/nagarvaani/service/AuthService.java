@@ -239,12 +239,20 @@ public class AuthService {
             throw new RuntimeException("Email already exists");
         }
 
+        // Citizens see the officer's contact details, so a valid number is required
+        if (request.getPhone() == null
+                || !request.getPhone().matches("^[6-9]\\d{9}$")) {
+            throw new RuntimeException(
+                    "Please enter a valid 10-digit officer phone number");
+        }
+
         Department department = departmentRepository.findById(request.getDepartmentId())
                 .orElseThrow(() -> new RuntimeException("Department not found"));
 
         User officer = User.builder()
                 .name(request.getName())
                 .email(request.getEmail())
+                .phone(request.getPhone())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.OFFICER)
                 .department(department)

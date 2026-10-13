@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Complaint, Page } from '../../types'
 import api from '../../api/axios'
 import ComplaintCard from '../../components/ComplaintCard'
@@ -11,12 +11,55 @@ interface MyComplaintsPageProps {
   ) => void
 }
 
+type TabKey =
+  | 'ALL'
+  | 'PENDING'
+  | 'IN_PROGRESS'
+  | 'RESOLVED'
+  | 'CLOSED'
+
+const TABS: {
+  key: TabKey
+  label: string
+  statuses: string[]
+}[] = [
+  { key: 'ALL', label: 'All', statuses: [] },
+  {
+    key: 'PENDING',
+    label: 'Pending',
+    statuses: ['REPORTED', 'VERIFIED'],
+  },
+  {
+    key: 'IN_PROGRESS',
+    label: 'In progress',
+    statuses: ['ASSIGNED', 'IN_PROGRESS', 'ESCALATED'],
+  },
+  {
+    key: 'RESOLVED',
+    label: 'Resolved',
+    statuses: ['RESOLVED'],
+  },
+  {
+    key: 'CLOSED',
+    label: 'Closed',
+    statuses: ['CLOSED', 'REJECTED'],
+  },
+]
+
+// 0 = still active, 1 = resolved, 2 = closed (goes to the bottom)
+function sortRank(status: string) {
+  if (status === 'RESOLVED') return 1
+  if (status === 'CLOSED' || status === 'REJECTED') return 2
+  return 0
+}
+
 export default function MyComplaintsPage({
   navigate,
 }: MyComplaintsPageProps) {
   const [complaints, setComplaints] = useState<Complaint[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [activeTab, setActiveTab] = useState<TabKey>('ALL')
 
   useEffect(() => {
     const fetchMyComplaints = async () => {
@@ -45,6 +88,36 @@ export default function MyComplaintsPage({
 
     fetchMyComplaints()
   }, [])
+
+  // Active complaints first (newest first), then resolved, closed at the bottom
+  const sortedComplaints = useMemo(
+    () =>
+      [...complaints].sort(
+        (a, b) =>
+          sortRank(a.status) - sortRank(b.status) ||
+          b.id - a.id
+      ),
+    [complaints]
+  )
+
+  const visibleComplaints = useMemo(() => {
+    const tab = TABS.find((item) => item.key === activeTab)
+
+    if (!tab || tab.key === 'ALL') {
+      return sortedComplaints
+    }
+
+    return sortedComplaints.filter((complaint) =>
+      tab.statuses.includes(complaint.status)
+    )
+  }, [sortedComplaints, activeTab])
+
+  const countFor = (tab: (typeof TABS)[number]) =>
+    tab.key === 'ALL'
+      ? complaints.length
+      : complaints.filter((complaint) =>
+          tab.statuses.includes(complaint.status)
+        ).length
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 pb-24 md:pb-8">
@@ -133,20 +206,58 @@ export default function MyComplaintsPage({
         !error &&
         complaints.length > 0 && (
           <>
+            {/* Status tabs */}
+            <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
+              {TABS.map((tab) => {
+                const active = activeTab === tab.key
+
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap border transition-all ${
+                      active
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-navy-600 border-navy-200 hover:bg-navy-50'
+                    }`}
+                  >
+                    {tab.label}
+                    <span
+                      className={`ml-2 text-xs ${
+                        active
+                          ? 'text-white/80'
+                          : 'text-navy-400'
+                      }`}
+                    >
+                      {countFor(tab)}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm text-navy-500">
                 <span className="font-semibold text-navy-700">
-                  {complaints.length}
+                  {visibleComplaints.length}
                 </span>{' '}
                 complaint
-                {complaints.length !== 1
+                {visibleComplaints.length !== 1
                   ? 's'
                   : ''}
               </p>
             </div>
 
+            {visibleComplaints.length === 0 && (
+              <div className="bg-white rounded-2xl border border-navy-200/60 p-10 text-center">
+                <p className="text-sm text-navy-500">
+                  No complaints in this tab.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-4">
-              {complaints.map((complaint) => (
+              {visibleComplaints.map((complaint) => (
                 <ComplaintCard
                   key={complaint.id}
                   complaint={complaint}

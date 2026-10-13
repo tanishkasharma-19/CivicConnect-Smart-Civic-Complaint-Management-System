@@ -35,6 +35,10 @@ export interface Complaint {
   priorityScore?: number
   escalationLevel?: number
   department?: string
+  // Assigned officer: name for everyone, email and phone only for the citizen who filed it
+  officerName?: string
+  officerEmail?: string
+  officerPhone?: string
   resolutionNotes?: string
   deadline?: string
   createdAt?: string

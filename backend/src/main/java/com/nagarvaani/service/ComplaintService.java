@@ -178,13 +178,31 @@ public class ComplaintService {
                 .toList();
     }
 
-    public ComplaintResponse getComplaintById(Long id) {
+    /*
+     * Returns one complaint.
+     *
+     * The officer's NAME is returned to everybody.
+     * The officer's EMAIL and PHONE are returned only when the person asking
+     * is the citizen who filed this complaint.
+     */
+    public ComplaintResponse getComplaintById(Long id, String requesterEmail) {
 
         Complaint complaint = complaintRepository.findById(id)
                 .orElseThrow(() ->
                         new RuntimeException("Complaint not found"));
 
-        return mapToResponse(complaint);
+        boolean showOfficerContact = false;
+
+        User requester = userRepository.findByEmail(requesterEmail).orElse(null);
+
+        if (requester != null
+                && complaint.getReportedBy() != null
+                && complaint.getReportedBy().getId().equals(requester.getId())) {
+
+            showOfficerContact = true;
+        }
+
+        return mapToResponse(complaint, showOfficerContact);
     }
 
     public List<ComplaintResponse> getMyComplaints(String email) {
@@ -220,6 +238,16 @@ public class ComplaintService {
     private ComplaintResponse mapToResponse(
             Complaint complaint) {
 
+        // Lists never contain the officer's email or phone
+        return mapToResponse(complaint, false);
+    }
+
+    private ComplaintResponse mapToResponse(
+            Complaint complaint,
+            boolean showOfficerContact) {
+
+        User officer = complaint.getAssignedTo();
+
         return ComplaintResponse.builder()
                 .id(complaint.getId())
                 .title(complaint.getTitle())
@@ -238,9 +266,20 @@ public class ComplaintService {
                         complaint.getDepartment() != null
                                 ? complaint.getDepartment().getName()
                                 : null)
+                .createdAt(complaint.getCreatedAt())
+                .officerName(officer != null ? officer.getName() : null)
+                .officerEmail(
+                        officer != null && showOfficerContact
+                                ? officer.getEmail()
+                                : null)
+                .officerPhone(
+                        officer != null && showOfficerContact
+                                ? officer.getPhone()
+                                : null)
                 .message(null)
                 .build();
     }
+
     // An officer may only work on complaints assigned to them
     private void checkOfficerOwnsComplaint(User changedBy, Complaint complaint) {
 

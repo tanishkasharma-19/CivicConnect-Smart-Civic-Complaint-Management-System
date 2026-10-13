@@ -14,6 +14,7 @@ interface BackendUser {
   id: number
   name: string
   email: string
+  phone?: string
   role: string
   designation?: string
   ward?: string
@@ -57,6 +58,7 @@ export default function AdminUsers({
       email: '',
       password: '',
       departmentId: '',
+      phone: '',
     })
 
   const [loading, setLoading] =
@@ -156,6 +158,14 @@ export default function AdminUsers({
       return
     }
 
+    // Citizens see this number on their complaint, so it must be valid
+    if (!/^[6-9]\d{9}$/.test(form.phone)) {
+      setError(
+        'Please enter a valid 10-digit officer phone number.'
+      )
+      return
+    }
+
     try {
       setActionLoading(true)
       setError('')
@@ -165,6 +175,7 @@ export default function AdminUsers({
         {
           name: form.name,
           email: form.email,
+          phone: form.phone,
           password: form.password,
           departmentId:
             Number(
@@ -178,6 +189,7 @@ export default function AdminUsers({
         email: '',
         password: '',
         departmentId: '',
+        phone: '',
       })
 
       setShowCreateOfficer(false)
@@ -185,8 +197,17 @@ export default function AdminUsers({
       await loadData()
     } catch (err) {
       console.error(err)
+      const backendMessage = (
+        err as {
+          response?: {
+            data?: { message?: string }
+          }
+        }
+      ).response?.data?.message
+
       setError(
-        'Unable to create officer.'
+        backendMessage ||
+          'Unable to create officer.'
       )
     } finally {
       setActionLoading(false)
@@ -277,6 +298,23 @@ export default function AdminUsers({
                   setForm({
                     ...form,
                     email: e.target.value,
+                  })
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-navy-200 text-sm"
+              />
+
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                placeholder="Officer phone (10 digits)"
+                value={form.phone}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    phone: e.target.value
+                      .replace(/\D/g, '')
+                      .slice(0, 10),
                   })
                 }
                 className="w-full px-3.5 py-2.5 rounded-xl border border-navy-200 text-sm"
@@ -494,6 +532,12 @@ export default function AdminUsers({
                             <p className="text-xs text-navy-400">
                               {user.email}
                             </p>
+
+                            {user.phone && (
+                              <p className="text-xs text-navy-400">
+                                {user.phone}
+                              </p>
+                            )}
                           </div>
 
                         </div>
