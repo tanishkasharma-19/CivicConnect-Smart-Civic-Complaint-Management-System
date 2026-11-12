@@ -40,6 +40,8 @@ export interface Complaint {
   officerEmail?: string
   officerPhone?: string
   resolutionNotes?: string
+  // true when the logged-in person has already upvoted this complaint
+  upvotedByMe?: boolean
   deadline?: string
   createdAt?: string
   updatedAt?: string

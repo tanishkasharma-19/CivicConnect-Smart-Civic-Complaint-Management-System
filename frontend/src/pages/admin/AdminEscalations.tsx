@@ -18,6 +18,10 @@ interface Officer {
   name: string
   email: string
   isActive?: boolean
+  department?: {
+    id: number
+    name: string
+  } | null
 }
 
 function formatStatus(value: string) {
@@ -185,7 +189,11 @@ export default function AdminEscalations({
                   .filter(
                     (officer) =>
                       officer.isActive !==
-                      false
+                        false &&
+                      // only officers of THIS complaint's department
+                      officer.department
+                        ?.name ===
+                        selected.department
                   )
                   .map(
                     (officer) => (

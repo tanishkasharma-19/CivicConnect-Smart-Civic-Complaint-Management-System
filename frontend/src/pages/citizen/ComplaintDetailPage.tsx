@@ -34,6 +34,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   ASSIGNED: "Complaint has been assigned.",
   IN_PROGRESS: "Complaint is currently being handled.",
   RESOLVED: "Complaint has been resolved.",
+  CLOSED: "Complaint has been closed.",
 }
 
 function formatStatus(status: string) {
@@ -74,8 +75,14 @@ function formatDate(date?: string) {
   })
 }
 
+// Same steps, plus CLOSED at the end (used once the complaint is closed)
+const FULL_ORDER: Status[] = [
+  ...STATUS_ORDER,
+  "CLOSED",
+]
+
 function getStatusIndex(status: string) {
-  return STATUS_ORDER.indexOf(
+  return FULL_ORDER.indexOf(
     status as Status
   )
 }
@@ -89,8 +96,11 @@ function Timeline({
     complaint.status
   )
 
+  // Closed complaint: show every step, all of them completed
   const statuses =
-    currentIndex >= 0
+    complaint.status === "CLOSED"
+      ? FULL_ORDER
+      : currentIndex >= 0
       ? STATUS_ORDER
       : [
           ...STATUS_ORDER,
@@ -101,7 +111,7 @@ function Timeline({
     <div className="space-y-0">
       {statuses.map((status, index) => {
         const statusIndex =
-          STATUS_ORDER.indexOf(status)
+          FULL_ORDER.indexOf(status)
 
         const isCompleted =
           currentIndex >= 0 &&
@@ -192,7 +202,8 @@ function Timeline({
                 )}
               </div>
 
-              {isCompleted || isCurrent ? (
+              {/* Upcoming steps show nothing (no "Awaiting") */}
+              {(isCompleted || isCurrent) && (
                 <>
                   <p className="text-xs text-navy-500 mb-0.5">
                     {STATUS_MESSAGES[status] ??
@@ -205,10 +216,6 @@ function Timeline({
                     </p>
                   )}
                 </>
-              ) : (
-                <p className="text-xs text-navy-400">
-                  Awaiting
-                </p>
               )}
             </div>
           </div>
@@ -263,6 +270,11 @@ export default function ComplaintDetailPage({
           )
 
         setComplaint(response.data)
+
+        // Remember if this person already upvoted (works after refresh too)
+        setUpvoted(
+          Boolean(response.data.upvotedByMe)
+        )
       } catch (err) {
         console.error(
           "Failed to fetch complaint:",
@@ -299,70 +311,70 @@ export default function ComplaintDetailPage({
       return
     }
 
+    // Safety: never send a second upvote
+    if (upvoted) {
+      setShowUpvoteModal(false)
+      setToast("You've already upvoted this!")
+      return
+    }
+
     try {
       setUpvoting(true)
-      setError("")
 
-      if (upvoted) {
-        await api.delete(
-          `/api/complaints/${complaint.id}/upvote`
-        )
+      await api.post(
+        `/api/complaints/${complaint.id}/upvote`
+      )
 
-        setComplaint((current) => {
-          if (!current) {
-            return current
-          }
+      setComplaint((current) => {
+        if (!current) {
+          return current
+        }
 
-          return {
-            ...current,
-            upvoteCount: Math.max(
-              (current.upvoteCount ?? 0) - 1,
-              0
-            ),
-          }
-        })
+        return {
+          ...current,
+          upvoteCount:
+            (current.upvoteCount ?? 0) + 1,
+        }
+      })
 
-        setUpvoted(false)
-        setToast(
-          "Your upvote has been removed."
-        )
-      } else {
-        await api.post(
-          `/api/complaints/${complaint.id}/upvote`
-        )
+      setUpvoted(true)
 
-        setComplaint((current) => {
-          if (!current) {
-            return current
-          }
-
-          return {
-            ...current,
-            upvoteCount:
-              (current.upvoteCount ?? 0) + 1,
-          }
-        })
-
-        setUpvoted(true)
-
-        setToast(
-          "Complaint upvoted successfully."
-        )
-      }
-
-      setShowUpvoteModal(false)
+      setToast(
+        "Complaint upvoted successfully."
+      )
     } catch (err) {
       console.error(
-        "Failed to update upvote:",
+        "Failed to upvote:",
         err
       )
 
-      setError(
-        upvoted
-          ? "Unable to remove your upvote."
-          : "Unable to update your upvote. You may have already upvoted this complaint."
-      )
+      const message = (
+        err as {
+          response?: {
+            data?: { message?: string }
+          }
+        }
+      ).response?.data?.message
+
+      if (
+        message &&
+        message
+          .toLowerCase()
+          .includes("already upvoted")
+      ) {
+        // Server says this person already upvoted
+        setUpvoted(true)
+        setToast(
+          "You've already upvoted this!"
+        )
+      } else {
+        setToast(
+          "Unable to upvote right now. Please try again."
+        )
+      }
     } finally {
+      // The pop-up ALWAYS closes after the click
+      setShowUpvoteModal(false)
       setUpvoting(false)
     }
   }
@@ -438,15 +450,11 @@ export default function ComplaintDetailPage({
                   "'Outfit', sans-serif",
               }}
             >
-              {upvoted
-                ? "Remove your upvote?"
-                : "Upvote this complaint?"}
+              Upvote this complaint?
             </h2>
 
             <p className="text-sm text-navy-500 text-center mt-2 leading-6">
-              {upvoted
-                ? "Your upvote will no longer support this civic issue."
-                : "Your upvote will show community support for this issue and help make the problem more visible."}
+              Your upvote will show community support for this issue and help make the problem more visible.
             </p>
 
             <div className="bg-navy-50 rounded-xl p-4 mt-5">
@@ -468,9 +476,7 @@ export default function ComplaintDetailPage({
                 disabled={upvoting}
                 className="py-2.5 border border-navy-200 text-navy-700 hover:bg-navy-50 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
               >
-                {upvoted
-                  ? "No, Keep It"
-                  : "No, Thanks"}
+                No, Thanks
               </button>
 
               <button
@@ -480,9 +486,7 @@ export default function ComplaintDetailPage({
                 className="py-2.5 bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white rounded-xl text-sm font-semibold transition-all"
               >
                 {upvoting
-                  ? "Updating..."
-                  : upvoted
-                  ? "Yes, Remove"
+                  ? "Upvoting..."
                   : "Yes, Upvote"}
               </button>
             </div>
@@ -808,9 +812,15 @@ export default function ComplaintDetailPage({
             <div className="flex flex-wrap items-center gap-3">
 
               <button
-                onClick={() =>
-                  setShowUpvoteModal(true)
-                }
+                onClick={() => {
+                  if (upvoted) {
+                    setToast(
+                      "You've already upvoted this!"
+                    )
+                  } else {
+                    setShowUpvoteModal(true)
+                  }
+                }}
                 disabled={upvoting}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 font-semibold text-sm transition-all ${
                   upvoted

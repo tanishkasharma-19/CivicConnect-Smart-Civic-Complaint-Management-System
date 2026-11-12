@@ -19,6 +19,10 @@ interface Officer {
   email: string
   role: string
   isActive?: boolean
+  department?: {
+    id: number
+    name: string
+  } | null
 }
 
 function formatStatus(value: string) {
@@ -777,7 +781,11 @@ export default function AdminComplaints({
                       .filter(
                         (officer) =>
                           officer.isActive !==
-                          false
+                            false &&
+                          // only officers of THIS complaint's department
+                          officer.department
+                            ?.name ===
+                            selected.department
                       )
                       .map(
                         (officer) => (
@@ -795,6 +803,23 @@ export default function AdminComplaints({
                         )
                       )}
                   </select>
+
+                  {officers.filter(
+                    (officer) =>
+                      officer.isActive !==
+                        false &&
+                      officer.department
+                        ?.name ===
+                        selected.department
+                  ).length === 0 && (
+                    <p className="text-xs text-red-500 mt-2">
+                      No active officer found in the{' '}
+                      {selected.department ||
+                        'this'}{' '}
+                      department. Create one in
+                      Users first.
+                    </p>
+                  )}
 
                   <button
                     onClick={
