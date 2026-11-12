@@ -10,9 +10,11 @@ import com.nagarvaani.dto.response.AuthResponse;
 import com.nagarvaani.enums.Role;
 import com.nagarvaani.model.Department;
 import com.nagarvaani.model.PasswordResetToken;
+import com.nagarvaani.model.PendingRegistration;
 import com.nagarvaani.model.User;
 import com.nagarvaani.repository.DepartmentRepository;
 import com.nagarvaani.repository.PasswordResetTokenRepository;
+import com.nagarvaani.repository.PendingRegistrationRepository;
 import com.nagarvaani.repository.UserRepository;
 import com.nagarvaani.security.JwtUtil;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,6 +62,7 @@ class AuthServiceTest {
     @Mock private AuthenticationManager authenticationManager;
     @Mock private PasswordResetTokenRepository passwordResetTokenRepository;
     @Mock private EmailService emailService;
+    @Mock private PendingRegistrationRepository pendingRegistrationRepository;
 
     @InjectMocks
     private AuthService authService;
@@ -76,6 +80,15 @@ class AuthServiceTest {
                 .build();
         user.setId(1L);
         return user;
+    }
+
+    private PendingRegistration pending(String email) {
+        return PendingRegistration.builder()
+                .name("Test User")
+                .email(email)
+                .phone("9876543210")
+                .passwordHash("encoded-password")
+                .build();
     }
 
     // same hashing rule as AuthService.hashToken
@@ -234,55 +247,66 @@ class AuthServiceTest {
     // ---------- email verification ----------
 
     @Test
-    void verifyEmail_wrongCode_countsTheAttempt() throws Exception {
-        User user = user("a@example.com", false);
-        user.setVerificationCodeHash(sha256("123456:a@example.com"));
-        user.setVerificationCodeExpiry(LocalDateTime.now().plusMinutes(5));
-        user.setVerificationAttempts(0);
-        when(userRepository.findByEmail("a@example.com")).thenReturn(Optional.of(user));
+    void verifyEmail_wrongCode_countsTheAttempt_andCreatesNoUser() throws Exception {
+        PendingRegistration pending = pending("a@example.com");
+        pending.setVerificationCodeHash(sha256("123456:a@example.com"));
+        pending.setVerificationCodeExpiry(LocalDateTime.now().plusMinutes(5));
+        pending.setVerificationAttempts(0);
+        when(pendingRegistrationRepository.findByEmail("a@example.com"))
+                .thenReturn(Optional.of(pending));
 
         assertThrows(RuntimeException.class,
                 () -> authService.verifyEmail(verifyRequest("a@example.com", "000000")));
 
-        assertEquals(1, user.getVerificationAttempts());
-        assertFalse(user.getEmailVerified());
+        assertEquals(1, pending.getVerificationAttempts());
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
     void verifyEmail_tooManyWrongAttempts_isLocked() throws Exception {
-        User user = user("a@example.com", false);
-        user.setVerificationCodeHash(sha256("123456:a@example.com"));
-        user.setVerificationCodeExpiry(LocalDateTime.now().plusMinutes(5));
-        user.setVerificationAttempts(5);
-        when(userRepository.findByEmail("a@example.com")).thenReturn(Optional.of(user));
+        PendingRegistration pending = pending("a@example.com");
+        pending.setVerificationCodeHash(sha256("123456:a@example.com"));
+        pending.setVerificationCodeExpiry(LocalDateTime.now().plusMinutes(5));
+        pending.setVerificationAttempts(5);
+        when(pendingRegistrationRepository.findByEmail("a@example.com"))
+                .thenReturn(Optional.of(pending));
 
         // even the CORRECT code is refused after 5 wrong attempts
         RuntimeException error = assertThrows(RuntimeException.class,
                 () -> authService.verifyEmail(verifyRequest("a@example.com", "123456")));
 
         assertTrue(error.getMessage().contains("Too many"));
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
     void verifyEmail_expiredCode_throws() throws Exception {
-        User user = user("a@example.com", false);
-        user.setVerificationCodeHash(sha256("123456:a@example.com"));
-        user.setVerificationCodeExpiry(LocalDateTime.now().minusMinutes(1));
-        when(userRepository.findByEmail("a@example.com")).thenReturn(Optional.of(user));
+        PendingRegistration pending = pending("a@example.com");
+        pending.setVerificationCodeHash(sha256("123456:a@example.com"));
+        pending.setVerificationCodeExpiry(LocalDateTime.now().minusMinutes(1));
+        when(pendingRegistrationRepository.findByEmail("a@example.com"))
+                .thenReturn(Optional.of(pending));
 
         RuntimeException error = assertThrows(RuntimeException.class,
                 () -> authService.verifyEmail(verifyRequest("a@example.com", "123456")));
 
         assertTrue(error.getMessage().contains("expired"));
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
-    void verifyEmail_correctCode_verifiesAccountAndReturnsToken() throws Exception {
-        User user = user("a@example.com", false);
-        user.setVerificationCodeHash(sha256("123456:a@example.com"));
-        user.setVerificationCodeExpiry(LocalDateTime.now().plusMinutes(5));
-        user.setVerificationAttempts(0);
-        when(userRepository.findByEmail("a@example.com")).thenReturn(Optional.of(user));
+    void verifyEmail_correctCode_createsUserDeletesPendingAndReturnsToken() throws Exception {
+        PendingRegistration pending = pending("a@example.com");
+        pending.setVerificationCodeHash(sha256("123456:a@example.com"));
+        pending.setVerificationCodeExpiry(LocalDateTime.now().plusMinutes(5));
+        pending.setVerificationAttempts(0);
+        when(pendingRegistrationRepository.findByEmail("a@example.com"))
+                .thenReturn(Optional.of(pending));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            saved.setId(1L);
+            return saved;
+        });
         when(jwtUtil.generateToken(1L, "a@example.com", "CITIZEN")).thenReturn("jwt-token");
 
         AuthResponse response =
@@ -290,11 +314,45 @@ class AuthServiceTest {
 
         assertEquals("jwt-token", response.getToken());
         assertEquals("CITIZEN", response.getRole());
-        assertTrue(user.getEmailVerified());
-        assertNull(user.getVerificationCodeHash());
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(saved.capture());
+        assertEquals("encoded-password", saved.getValue().getPassword());
+        assertTrue(saved.getValue().getEmailVerified());
+        verify(pendingRegistrationRepository).delete(pending);
+    }
+
+    @Test
+    void verifyEmail_noPendingSignUp_throws() {
+        when(pendingRegistrationRepository.findByEmail("a@example.com"))
+                .thenReturn(Optional.empty());
+        when(userRepository.findByEmail("a@example.com")).thenReturn(Optional.empty());
+
+        assertThrows(RuntimeException.class,
+                () -> authService.verifyEmail(verifyRequest("a@example.com", "123456")));
     }
 
     // ---------- register / login ----------
+
+    @Test
+    void register_newEmail_savesOnlyPending_neverTheUser() {
+        when(userRepository.findByEmail("a@example.com")).thenReturn(Optional.empty());
+        when(pendingRegistrationRepository.findByEmail("a@example.com"))
+                .thenReturn(Optional.empty());
+        when(passwordEncoder.encode("Password@123")).thenReturn("encoded-password");
+
+        RegisterRequest request = new RegisterRequest();
+        request.setName("Test");
+        request.setEmail("a@example.com");
+        request.setPhone("9876543210");
+        request.setPassword("Password@123");
+
+        authService.register(request);
+
+        verify(userRepository, never()).save(any(User.class));
+        verify(pendingRegistrationRepository, times(1)).save(any(PendingRegistration.class));
+        verify(emailService).sendVerificationEmail(eq("a@example.com"), anyString());
+    }
 
     @Test
     void register_emailAlreadyVerified_throws() {

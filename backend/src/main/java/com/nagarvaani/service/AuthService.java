@@ -11,9 +11,11 @@ import com.nagarvaani.dto.response.AuthResponse;
 import com.nagarvaani.enums.Role;
 import com.nagarvaani.model.Department;
 import com.nagarvaani.model.PasswordResetToken;
+import com.nagarvaani.model.PendingRegistration;
 import com.nagarvaani.model.User;
 import com.nagarvaani.repository.DepartmentRepository;
 import com.nagarvaani.repository.PasswordResetTokenRepository;
+import com.nagarvaani.repository.PendingRegistrationRepository;
 import com.nagarvaani.repository.UserRepository;
 import com.nagarvaani.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +48,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailService emailService;
+    private final PendingRegistrationRepository pendingRegistrationRepository;
 
     private static final int RESET_TOKEN_MINUTES = 15;
     // A new reset email can be sent only after this many minutes
@@ -58,7 +61,8 @@ public class AuthService {
     private static final int MAX_VERIFICATION_ATTEMPTS = 5;
 
     // ─────────────────────────────────────────────
-    // REGISTER  (account is created UNVERIFIED, a 6-digit code is emailed)
+    // REGISTER  (NOTHING is saved in "users" yet: the details wait in
+    // "pending_registrations" until the 6-digit email code is entered)
     // ─────────────────────────────────────────────
 
     @Transactional
@@ -66,93 +70,110 @@ public class AuthService {
 
         String email = request.getEmail().trim();
 
-        Optional<User> existing = userRepository.findByEmail(email);
+        // Remove sign-ups that were never verified (older than 1 day)
+        pendingRegistrationRepository.deleteByVerificationCodeExpiryBefore(
+                LocalDateTime.now().minusDays(1));
 
-        User user;
+        Optional<User> existing = userRepository.findByEmail(email);
 
         if (existing.isPresent()) {
 
-            user = existing.get();
+            User user = existing.get();
 
             // A verified account already uses this email
             if (!Boolean.FALSE.equals(user.getEmailVerified())) {
                 throw new RuntimeException("Email already exists");
             }
 
-            // Earlier sign-up was never verified: let the person start again
-            user.setName(request.getName());
-            user.setPhone(request.getPhone());
-            user.setPassword(passwordEncoder.encode(request.getPassword()));
-
-        } else {
-
-            user = User.builder()
-                    .name(request.getName())
-                    .email(email)
-                    .phone(request.getPhone())
-                    .password(passwordEncoder.encode(request.getPassword()))
-                    .role(Role.CITIZEN)
-                    .isActive(true)
-                    .emailVerified(false)
-                    .build();
+            // Leftover unverified row from the OLD sign-up flow: remove it
+            passwordResetTokenRepository.deleteByUser(user);
+            userRepository.delete(user);
+            userRepository.flush();
         }
 
-        userRepository.save(user);
+        // Same email signing up again before verifying: reuse the pending row
+        PendingRegistration pending = pendingRegistrationRepository
+                .findByEmail(email)
+                .orElseGet(() -> PendingRegistration.builder()
+                        .email(email)
+                        .build());
 
-        sendVerificationCode(user);
+        pending.setName(request.getName());
+        pending.setPhone(request.getPhone());
+        pending.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+
+        sendVerificationCode(pending);
 
         return "Verification code sent";
     }
 
     // ─────────────────────────────────────────────
-    // VERIFY EMAIL  (correct code -> verified + logged in)
+    // VERIFY EMAIL  (correct code -> user is CREATED now + logged in)
     // ─────────────────────────────────────────────
 
     // noRollbackFor: a WRONG code must still save the increased attempt count
     @Transactional(noRollbackFor = RuntimeException.class)
     public AuthResponse verifyEmail(VerifyEmailRequest request) {
 
-        User user = userRepository.findByEmail(request.getEmail().trim())
-                .orElseThrow(() ->
-                        new RuntimeException("Invalid verification code"));
+        String email = request.getEmail().trim();
 
-        if (!Boolean.FALSE.equals(user.getEmailVerified())) {
-            throw new RuntimeException("This email is already verified. Please sign in.");
+        Optional<PendingRegistration> optionalPending =
+                pendingRegistrationRepository.findByEmail(email);
+
+        if (optionalPending.isEmpty()) {
+
+            if (userRepository.findByEmail(email).isPresent()) {
+                throw new RuntimeException(
+                        "This email is already verified. Please sign in.");
+            }
+
+            throw new RuntimeException(
+                    "No pending sign-up found for this email. Please register again.");
         }
 
-        if (user.getVerificationCodeHash() == null
-                || user.getVerificationCodeExpiry() == null
-                || user.getVerificationCodeExpiry().isBefore(LocalDateTime.now())) {
+        PendingRegistration pending = optionalPending.get();
+
+        if (pending.getVerificationCodeHash() == null
+                || pending.getVerificationCodeExpiry() == null
+                || pending.getVerificationCodeExpiry().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("This code has expired. Please request a new one.");
         }
 
-        int attempts = user.getVerificationAttempts() == null
+        int attempts = pending.getVerificationAttempts() == null
                 ? 0
-                : user.getVerificationAttempts();
+                : pending.getVerificationAttempts();
 
         if (attempts >= MAX_VERIFICATION_ATTEMPTS) {
             throw new RuntimeException("Too many wrong attempts. Please request a new code.");
         }
 
-        String enteredHash = hashToken(request.getCode().trim() + ":" + user.getEmail());
+        String enteredHash = hashToken(request.getCode().trim() + ":" + pending.getEmail());
 
         boolean matches = MessageDigest.isEqual(
                 enteredHash.getBytes(StandardCharsets.UTF_8),
-                user.getVerificationCodeHash().getBytes(StandardCharsets.UTF_8)
+                pending.getVerificationCodeHash().getBytes(StandardCharsets.UTF_8)
         );
 
         if (!matches) {
-            user.setVerificationAttempts(attempts + 1);
-            userRepository.save(user);
+            pending.setVerificationAttempts(attempts + 1);
+            pendingRegistrationRepository.save(pending);
             throw new RuntimeException("Incorrect code. Please try again.");
         }
 
-        // Correct code
-        user.setEmailVerified(true);
-        user.setVerificationCodeHash(null);
-        user.setVerificationCodeExpiry(null);
-        user.setVerificationAttempts(0);
-        userRepository.save(user);
+        // Correct code: ONLY NOW the user is created in the users table
+        User user = User.builder()
+                .name(pending.getName())
+                .email(pending.getEmail())
+                .phone(pending.getPhone())
+                .password(pending.getPasswordHash())
+                .role(Role.CITIZEN)
+                .isActive(true)
+                .emailVerified(true)
+                .build();
+
+        user = userRepository.save(user);
+
+        pendingRegistrationRepository.delete(pending);
 
         String token = jwtUtil.generateToken(
                 user.getId(),
@@ -174,18 +195,17 @@ public class AuthService {
     @Transactional
     public void resendVerification(ResendVerificationRequest request) {
 
-        Optional<User> optionalUser =
-                userRepository.findByEmail(request.getEmail().trim());
+        Optional<PendingRegistration> optionalPending =
+                pendingRegistrationRepository.findByEmail(request.getEmail().trim());
 
-        // Unknown or already verified: do nothing
-        if (optionalUser.isEmpty()
-                || !Boolean.FALSE.equals(optionalUser.get().getEmailVerified())) {
+        // No pending sign-up (unknown or already verified): do nothing
+        if (optionalPending.isEmpty()) {
             return;
         }
 
-        User user = optionalUser.get();
+        PendingRegistration pending = optionalPending.get();
 
-        LocalDateTime lastSent = user.getVerificationSentAt();
+        LocalDateTime lastSent = pending.getVerificationSentAt();
 
         if (lastSent != null
                 && lastSent.plusSeconds(VERIFICATION_RESEND_SECONDS)
@@ -193,7 +213,7 @@ public class AuthService {
             return;
         }
 
-        sendVerificationCode(user);
+        sendVerificationCode(pending);
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -366,23 +386,23 @@ public class AuthService {
     // ─────────────────────────────────────────────
 
     // Creates a new 6-digit code, stores only its hash, and emails the code
-    private void sendVerificationCode(User user) {
+    private void sendVerificationCode(PendingRegistration pending) {
 
         String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
 
-        user.setVerificationCodeHash(hashToken(code + ":" + user.getEmail()));
-        user.setVerificationCodeExpiry(
+        pending.setVerificationCodeHash(hashToken(code + ":" + pending.getEmail()));
+        pending.setVerificationCodeExpiry(
                 LocalDateTime.now().plusMinutes(VERIFICATION_CODE_MINUTES));
-        user.setVerificationAttempts(0);
-        user.setVerificationSentAt(LocalDateTime.now());
+        pending.setVerificationAttempts(0);
+        pending.setVerificationSentAt(LocalDateTime.now());
 
-        userRepository.save(user);
+        pendingRegistrationRepository.save(pending);
 
         try {
-            emailService.sendVerificationEmail(user.getEmail(), code);
+            emailService.sendVerificationEmail(pending.getEmail(), code);
         } catch (MailException e) {
             log.error("Failed to send verification email", e);
-            // Throwing rolls back the new account / code
+            // Throwing rolls back the pending sign-up / code
             throw new RuntimeException(
                     "We could not send the verification email right now. Please try again later."
             );

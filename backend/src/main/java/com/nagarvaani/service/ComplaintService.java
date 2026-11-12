@@ -202,7 +202,17 @@ public class ComplaintService {
             showOfficerContact = true;
         }
 
-        return mapToResponse(complaint, showOfficerContact);
+        ComplaintResponse response =
+                mapToResponse(complaint, showOfficerContact);
+
+        // Tells the frontend whether this person has already upvoted
+        response.setUpvotedByMe(
+                requester != null
+                        && upvoteRepository.existsByUserAndComplaint(
+                        requester,
+                        complaint));
+
+        return response;
     }
 
     public List<ComplaintResponse> getMyComplaints(String email) {
@@ -408,6 +418,16 @@ public class ComplaintService {
         if (officer.getRole() != Role.OFFICER) {
             throw new RuntimeException(
                     "Selected user is not an officer");
+        }
+
+        // Only an officer of the complaint's own department can be assigned
+        if (complaint.getDepartment() != null
+                && (officer.getDepartment() == null
+                || !complaint.getDepartment().getId()
+                .equals(officer.getDepartment().getId()))) {
+
+            throw new RuntimeException(
+                    "This officer does not belong to the department of this complaint");
         }
 
         ComplaintStatus oldStatus =

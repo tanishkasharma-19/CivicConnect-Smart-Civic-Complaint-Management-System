@@ -48,4 +48,7 @@ public class ComplaintResponse {
     private String message;
     private String resolutionNotes;
     private String afterPhotoUrl;
+
+    // true when the person viewing this complaint has already upvoted it
+    private Boolean upvotedByMe;
 }

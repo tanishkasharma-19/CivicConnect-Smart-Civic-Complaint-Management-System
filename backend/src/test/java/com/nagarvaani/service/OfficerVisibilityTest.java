@@ -7,6 +7,7 @@ import com.nagarvaani.enums.Role;
 import com.nagarvaani.model.Complaint;
 import com.nagarvaani.model.User;
 import com.nagarvaani.repository.ComplaintRepository;
+import com.nagarvaani.repository.UpvoteRepository;
 import com.nagarvaani.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +32,7 @@ class OfficerVisibilityTest {
 
     @Mock private ComplaintRepository complaintRepository;
     @Mock private UserRepository userRepository;
+    @Mock private UpvoteRepository upvoteRepository;
 
     @InjectMocks
     private ComplaintService complaintService;
